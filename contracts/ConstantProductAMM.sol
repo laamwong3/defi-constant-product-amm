@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 error ConstantProductAMM__InvalidToken();
 error ConstantProductAMM__InvalidAmount();
+error ConstantProductAMM__InvalidAssetPrice();
+error ConstantProductAMM__InvalidShares();
 
 contract ConstantProductAMM {
     IERC20 public immutable token0;
@@ -34,6 +36,19 @@ contract ConstantProductAMM {
     function _updateReserve(uint _reserve0, uint _reserve1) private {
         reserve0 = _reserve0;
         reserve1 = _reserve1;
+    }
+
+    function sqrt(uint x) public pure returns (uint y) {
+        uint z = (x + 1) / 2;
+        y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+    }
+
+    function _min(uint x, uint y) private pure returns (uint) {
+        return x <= y ? x : y;
     }
 
     function swap(address _tokenIn, uint _amountIn)
@@ -86,8 +101,52 @@ contract ConstantProductAMM {
         // make sure the price not changed after adding liquidity
         if (_amount0 <= 0 || _amount1 <= 0)
             revert ConstantProductAMM__InvalidAmount();
-        if (reserve1 * _amount0 != reserve0 * _amount1) {}
+        if (reserve1 * _amount0 != reserve0 * _amount1)
+            revert ConstantProductAMM__InvalidAssetPrice();
+
+        /**
+         * shares = sqrt(x * y) or
+         * shares = dx / x * t = dy / y * t
+         */
+        if (totalSupply == 0) {
+            shares = sqrt(_amount0 * _amount1);
+        } else {
+            shares = _min(
+                (_amount0 * totalSupply) / reserve0,
+                (_amount1 * totalSupply) / reserve1
+            );
+        }
+
+        //error checking
+        if (shares <= 0) revert ConstantProductAMM__InvalidShares();
+
+        //mint
+        _mint(msg.sender, shares);
+        _updateReserve(
+            token0.balanceOf(address(this)),
+            token1.balanceOf(address(this))
+        );
     }
 
-    function removeLiquidity() external {}
+    function removeLiquidity(uint _shares)
+        external
+        returns (uint amount0, uint amount1)
+    {
+        uint balance0 = token0.balanceOf(address(this));
+        uint balance1 = token1.balanceOf(address(this));
+
+        //calculate the amount to burn
+        amount0 = (_shares * balance0) / totalSupply;
+        amount1 = (_shares * balance1) / totalSupply;
+        if (amount0 <= 0 || amount1 <= 0)
+            revert ConstantProductAMM__InvalidAmount();
+
+        //burn shares
+        _burn(msg.sender, _shares);
+
+        _updateReserve(balance0 - amount0, balance1 - amount1);
+        //send to user
+        token0.transfer(msg.sender, amount0);
+        token1.transfer(msg.sender, amount1);
+    }
 }
