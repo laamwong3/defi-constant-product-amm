@@ -86,7 +86,7 @@ contract ConstantProductAMM {
         // make sure the price not changed after adding liquidity
         if (_amount0 <= 0 || _amount1 <= 0)
             revert ConstantProductAMM__InvalidAmount();
-        if (reserve1 * _amount0 != reserve0 * _amount1) 
+        if (reserve1 * _amount0 != reserve0 * _amount1) {}
     }
 
     function removeLiquidity() external {}
